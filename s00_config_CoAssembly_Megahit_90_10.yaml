@@ -1,0 +1,9 @@
+SAMPLES:
+- CC4
+- CD4
+- FC4
+- FD4
+- MC4
+- MD4
+WDIR: /mnt/thor/bigdata/ideARG_2020/results_coassembly_megahit_MAGs_90_10
+hmm_folder_AMRFinderPlus: /mnt/thor/bigdata/ideARG_2020/HMMS_AMRFinderPlus/HMM

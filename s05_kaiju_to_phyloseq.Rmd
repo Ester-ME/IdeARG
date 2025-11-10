@@ -1,0 +1,266 @@
+---
+title: "R Notebook"
+---
+
+```{r}
+library(phyloseq)
+library(microbiome)
+library(tidyverse)
+library(ggplot2)
+library(viridis)
+library(pals)
+library(grid)
+library(dplyr)
+library(stringr)
+library(svglite)
+```
+
+
+
+```{r}
+# Download KAIJU results from KBASE
+
+path <- "./kaiju_report/"
+
+level <- "phylum"
+
+files <- sort(list.files(path, 
+                        pattern=glob2rx(paste0("*", level, "*.kaijuReport",  collapse="|")),
+                        full.names = TRUE))
+
+samples <- c("cc4_1", "cc4_2", "cc4_3",
+             "cd4_1", "cd4_2", "cd4_3",
+             "mc4_1", "mc4_2", "mc4_3",
+             "md4_1", "md4_2", "md4_3",
+             "fc4_1", "fc4_2", "fc4_3",
+             "fd4_1", "fd4_2", "fd4_3")
+
+df <- data.frame(taxa=character())
+
+for (i in files) {
+  temp <- read.csv(i, sep="\t") #[, c("taxon_name", "reads")]
+  sample_name <- str_extract(temp$file[1], str_c(samples, collapse = "|"))
+  temp <- temp[, c("taxon_name","reads")]
+  colnames(temp) <- c("taxa", sample_name)
+  df <- full_join(df, temp, by = "taxa")
+  
+  df <- df %>%
+    mutate(across(where(is.numeric), ~ ifelse(is.na(.), 0, .)))
+}
+
+colnames(df)[1] <- level
+
+df_level <- df
+
+rownames(df) <- df[[1]]
+df[[1]] <- NULL
+
+# rownames(df) <- df$phylum
+# df$phylum <- NULL
+
+df <- df[,samples]
+
+m <- as.matrix(df)
+# m
+```
+
+
+```{r}
+# WRITE TABLES
+df_level <- df_level[, c(level, samples)] %>%
+  arrange(.data[[level]])
+df_level
+
+# write.table(df_level, file = paste0("kaiju_", level, "_readsCount.tsv"), sep="\t", col.names = TRUE, row.names = FALSE, quote = FALSE)
+```
+
+
+
+```{r}
+
+sample_dataset<-data.frame(colnames(df))
+
+colnames(sample_dataset)[1]<-"site"
+rownames(sample_dataset)<- sample_dataset$site
+
+sample_dataset
+
+sample_dataset$location <- 
+  c("Suna Canottieri", "Suna Canottieri","Suna Canottieri", "Suna Canottieri","Suna Canottieri","Suna Canottieri",
+  "Teatro Maggiore","Teatro Maggiore","Teatro Maggiore","Teatro Maggiore","Teatro Maggiore","Teatro Maggiore",
+  "Fondo Toce","Fondo Toce","Fondo Toce","Fondo Toce","Fondo Toce","Fondo Toce")
+  
+sample_dataset$level <- 
+  c("coast","coast","coast","deep","deep","deep","coast","coast","coast","deep","deep","deep",
+  "coast","coast","coast","deep","deep","deep")
+
+sample_dataset
+
+```
+
+
+```{r}
+
+taxa<-as.matrix(rownames(df))
+
+colnames(taxa)[1] <- level
+rownames(taxa)<-taxa[,1]
+
+head(taxa)
+
+```
+
+
+```{r}
+
+phy <- phyloseq(
+  otu_table(m, taxa_are_rows = T),
+  sample_data(sample_dataset),
+  tax_table(taxa)
+)
+
+phy
+```
+
+
+```{r}
+
+## Normalizing the asv counts as relative abundances
+prok_ndata_ra <- transform_sample_counts(phy, function(x) x/sum(x) )
+
+```
+
+
+```{r}
+melt <- psmelt(prok_ndata_ra)
+melt
+```
+
+
+
+```{r fig.width=7.8, fig.height=4.3}
+
+# To have the desired order inside the facet_grid
+melt$Sample <- factor(melt$Sample, levels = samples)
+
+# Riordina i livelli di matrix_env
+melt$location <- factor(melt$location,
+                        levels = c("Suna Canottieri", "Teatro Maggiore", "Fondo Toce"))
+
+
+ggplot(melt, aes(x = Sample, y = phylum)) +
+  geom_point(aes(size = Abundance, fill = phylum), alpha = 0.75, shape = 21) +
+  facet_grid(~location  , scales = "free", space = "free") +
+  scale_y_discrete(limits = rev) +
+  scale_size_continuous(
+    range = c(2, 8),
+    breaks = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
+  ) +
+  theme_bw(base_size = 9, base_line_size = 0.2) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    strip.text.y = element_text(angle = 0),  # Etichette delle righe facet_grid orizzontali
+    # strip.text.y = element_blank(),  # Rimuove il testo delle righe del facet_grid
+    strip.background = element_blank(),  # Rimuove il box di background delle righe del facet_grid
+    legend.position = "right",
+    panel.grid.major = element_line(color = "grey90")
+  ) +
+  guides(fill = "none",
+         size = guide_legend(title = "Rel. Abundance")) +  # mostra legenda per la grandezza
+  ylab("Phylum")
+
+ggsave("./phylum_bubblePlot.png", dpi=300)
+
+```
+
+```{r fig.height=12}
+plot_bar(prok_ndata_ra, fill="phylum", x="site") +
+    facet_grid(~factor(location, levels=c('Suna Canottieri', 'Teatro Maggiore', 'Fondo Toce')), scales = "free") +
+    xlab("") + 
+    ylab("Relative Abundance (%)") + 
+    theme_bw() +
+    theme(legend.position = "bottom", 
+          legend.direction = "vertical",
+          legend.text = element_text(color = "black", size = 13) ) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.25, hjust=1),
+          axis.text=element_text(size=14,face="bold")) 
+
+```
+
+
+
+```{r}
+
+kaiju2phyloseq <- function(level="phylum"){
+  path <- "./kaiju_report/"
+  files <- sort(list.files(path, 
+                        pattern=glob2rx(paste0("*", level, "*.kaijuReport",  collapse="|")),
+                        full.names = TRUE))
+  
+  samples <- c("cc4_1", "cc4_2", "cc4_3",
+             "cd4_1", "cd4_2", "cd4_3",
+             "mc4_1", "mc4_2", "mc4_3",
+             "md4_1", "md4_2", "md4_3",
+             "fc4_1", "fc4_2", "fc4_3",
+             "fd4_1", "fd4_2", "fd4_3")
+
+  df <- data.frame(taxa=character())
+  
+  for (i in files) {
+    temp <- read.csv(i, sep="\t") #[, c("taxon_name", "reads")]
+    sample_name <- str_extract(temp$file[1], str_c(samples, collapse = "|"))
+    temp <- temp[, c("taxon_name","reads")]
+    colnames(temp) <- c("taxa", sample_name)
+    df <- full_join(df, temp, by = "taxa")
+    
+    df <- df %>%
+      mutate(across(where(is.numeric), ~ ifelse(is.na(.), 0, .)))
+  }
+  
+  colnames(df)[1] <- level
+
+  rownames(df) <- df[[1]]
+  df[[1]] <- NULL
+  
+  # rownames(df) <- df$phylum
+  # df$phylum <- NULL
+  
+  df <- df[,samples]
+  
+  # MATRIX OTU TABLE
+  m <- as.matrix(df)
+  
+  # SAMPLE DATASET
+  sample_dataset<-data.frame(colnames(df))
+
+  colnames(sample_dataset)[1]<-"site"
+  rownames(sample_dataset)<- sample_dataset$site
+  
+  sample_dataset$location <- 
+    c("Suna Canottieri", "Suna Canottieri","Suna Canottieri", "Suna Canottieri","Suna Canottieri","Suna Canottieri",
+    "Teatro Maggiore","Teatro Maggiore","Teatro Maggiore","Teatro Maggiore","Teatro Maggiore","Teatro Maggiore",
+    "Fondo Toce","Fondo Toce","Fondo Toce","Fondo Toce","Fondo Toce","Fondo Toce")
+    
+  sample_dataset$level <- 
+    c("coast","coast","coast","deep","deep","deep","coast","coast","coast","deep","deep","deep",
+    "coast","coast","coast","deep","deep","deep")
+    
+  
+  taxa<-as.matrix(rownames(df))
+  
+  colnames(taxa)[1] <- level
+  rownames(taxa)<-taxa[,1]
+  
+  phy <- phyloseq(
+    otu_table(m, taxa_are_rows = T),
+    sample_data(sample_dataset),
+    tax_table(taxa)
+  )
+
+  return(phy)
+    
+}
+
+```
+

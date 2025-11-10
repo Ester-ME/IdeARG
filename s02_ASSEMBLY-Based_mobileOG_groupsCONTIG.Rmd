@@ -1,0 +1,228 @@
+---
+title: "R Notebook"
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(janitor)
+```
+
+
+
+
+```{r}
+# CC4
+CC4_mobileog <- read_delim("../results_coassembly_megahit_MAGs_90_10/CC4/mobileOG/CC4.mobileog.m8", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=F)
+colnames(CC4_mobileog) <- c("sseqid", "qseqid", "stitle", "qtitle", "pident", "bitscore", "evalue", "length", "slen", "qlen", "sstart", "send", "qstart", "qend", "qcovhsp", "scovhsp", "mismatch", "gapopen")
+CC4_mobileog$sample <- "CC4"
+
+# CD4
+CD4_mobileog <- read_delim("../results_coassembly_megahit_MAGs_90_10/CD4/mobileOG/CD4.mobileog.m8", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=F)
+colnames(CD4_mobileog) <- c("sseqid", "qseqid", "stitle", "qtitle", "pident", "bitscore", "evalue", "length", "slen", "qlen", "sstart", "send", "qstart", "qend", "qcovhsp", "scovhsp", "mismatch", "gapopen")
+CD4_mobileog$sample <- "CD4"
+
+# MC4
+MC4_mobileog <- read_delim("../results_coassembly_megahit_MAGs_90_10/MC4/mobileOG/MC4.mobileog.m8", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=F)
+colnames(MC4_mobileog) <- c("sseqid", "qseqid", "stitle", "qtitle", "pident", "bitscore", "evalue", "length", "slen", "qlen", "sstart", "send", "qstart", "qend", "qcovhsp", "scovhsp", "mismatch", "gapopen")
+MC4_mobileog$sample <- "MC4"
+
+# MD4
+MD4_mobileog <- read_delim("../results_coassembly_megahit_MAGs_90_10/MD4/mobileOG/MD4.mobileog.m8", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=F)
+colnames(MD4_mobileog) <- c("sseqid", "qseqid", "stitle", "qtitle", "pident", "bitscore", "evalue", "length", "slen", "qlen", "sstart", "send", "qstart", "qend", "qcovhsp", "scovhsp", "mismatch", "gapopen")
+MD4_mobileog$sample <- "MD4"
+
+# FC4
+FC4_mobileog <- read_delim("../results_coassembly_megahit_MAGs_90_10/FC4/mobileOG/FC4.mobileog.m8", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=F)
+colnames(FC4_mobileog) <- c("sseqid", "qseqid", "stitle", "qtitle", "pident", "bitscore", "evalue", "length", "slen", "qlen", "sstart", "send", "qstart", "qend", "qcovhsp", "scovhsp", "mismatch", "gapopen")
+FC4_mobileog$sample <- "FC4"
+
+# FD4
+FD4_mobileog <- read_delim("../results_coassembly_megahit_MAGs_90_10/FD4/mobileOG/FD4.mobileog.m8", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=F)
+colnames(FD4_mobileog) <- c("sseqid", "qseqid", "stitle", "qtitle", "pident", "bitscore", "evalue", "length", "slen", "qlen", "sstart", "send", "qstart", "qend", "qcovhsp", "scovhsp", "mismatch", "gapopen")
+FD4_mobileog$sample <- "FD4"
+
+  
+```
+
+
+```{r}
+
+master_mobileOG <- do.call("rbind", list(CC4_mobileog, CD4_mobileog, MC4_mobileog, MD4_mobileog, FC4_mobileog, FD4_mobileog))
+
+master_mobileOG
+
+```
+
+
+
+```{r}
+
+# FILTERING
+
+mobileog_basic <- master_mobileOG %>%
+  filter(bitscore>=100) %>%
+  filter(pident>=80) %>% 
+  filter(qcovhsp>=90) %>%
+  group_by(qtitle) %>%
+  slice_max(bitscore, with_ties = TRUE) %>%   # max bitscore but keep if equal values
+  slice_max(pident, with_ties = FALSE)  %>% 
+  janitor::clean_names() 
+
+mobileog_basic
+```
+
+
+```{r}
+# SEPARATING Sections
+
+mobileOG_contigs <- mobileog_basic %>%
+  tidyr::separate(stitle, c("mobileOG_ID","gene_name","best_hit_accession_ID","major_mobileOG_category","minor_mobileOG_category","source_DBs","evidence_type"), sep = '[|]') %>%
+  separate(qtitle, c("contigC", "contigN", "orfC", "orfN"), sep = "_", fill = 'right', extra = 'drop') %>%
+  unite("contig", contigC:contigN, sep="_", remove = TRUE) %>%
+  unite("orf", orfC:orfN, sep="_", remove = TRUE)
+
+
+mobileOG_contigs
+
+# mobileOG_contigs %>%
+#   write.table("./COASSEMBLY_mobileOG/Master_mobileOG_filtered_onCoASSEMBLY.tsv", quote = F, row.names = F, sep = "\t")
+
+
+```
+
+
+
+```{r}
+
+# How many MGEs are in each contig?
+
+contigs_summary_table <- mobileOG_contigs %>% 
+  dplyr::select(sample,contig) %>%
+  group_by(sample, contig) %>%
+  count(contig, name ="MGE_counts")
+
+contigs_summary_table
+
+```
+
+
+```{r}
+
+amr <- read_delim("./AMRFPlus_conserved_matches_onMAGs/conserved_matches_percConserved70_cutGA.tsv", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=T)
+
+amr
+
+```
+
+
+```{r}
+
+
+amr_contigs_summary_table <- amr %>% 
+  dplyr::select(sample, mags, contig) %>%
+  group_by(sample,mags, contig) %>%
+  count(contig, name ="AMR_counts")
+
+amr_contigs_summary_table
+
+```
+
+
+```{r}
+
+mge_amr <- inner_join(contigs_summary_table, amr_contigs_summary_table)
+mge_amr
+
+```
+
+
+```{r}
+
+# CC4
+CC4_tax <- read_delim("./COASSEMBLY_MEGAHIT_binning_based_gtdbtk/CC4.tsv", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=T)
+colnames(CC4_tax)[1] <- "mags"
+CC4_tax$sample <- "CC4"
+
+# CD4
+CD4_tax <- read_delim("./COASSEMBLY_MEGAHIT_binning_based_gtdbtk/CD4.tsv", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=T)
+colnames(CD4_tax)[1] <- "mags"
+CD4_tax$sample <- "CD4"
+
+# MC4
+MC4_tax <- read_delim("./COASSEMBLY_MEGAHIT_binning_based_gtdbtk/MC4.tsv", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=T)
+colnames(MC4_tax)[1] <- "mags"
+MC4_tax$sample <- "MC4"
+
+# MD4
+MD4_tax <- read_delim("./COASSEMBLY_MEGAHIT_binning_based_gtdbtk/MD4.tsv", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=T)
+colnames(MD4_tax)[1] <- "mags"
+MD4_tax$sample <- "MD4"
+
+# FC4
+FC4_tax <- read_delim("./COASSEMBLY_MEGAHIT_binning_based_gtdbtk/FC4.tsv", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=T)
+colnames(FC4_tax)[1] <- "mags"
+FC4_tax$sample <- "FC4"
+
+# FD4
+FD4_tax <- read_delim("./COASSEMBLY_MEGAHIT_binning_based_gtdbtk/FD4.tsv", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names=T)
+colnames(FD4_tax)[1] <- "mags"
+FD4_tax$sample <- "FD4"
+
+tax <- do.call("rbind", list(CC4_tax, CD4_tax, MC4_tax, MD4_tax, FC4_tax, FD4_tax))
+tax
+
+
+
+```
+
+```{r}
+
+mge_amr_tax <- inner_join(mge_amr, tax)
+mge_amr_tax
+
+```
+
+```{r}
+
+mge_tax <- inner_join(contigs_summary_table, tax)
+mge_tax
+
+```
+
+
+```{r}
+
+mge_tax[mge_tax$family=="Chitinophagaceae", ]
+
+```
+
+
+```{r}
+contigs_multi_occurences <- contigs_summary_table[contigs_summary_table$MGE_counts>1, ]
+contigs_multi_occurences
+
+```
+
+
+```{r}
+contigs_multi_occurences$MGE_counts <- NULL
+
+contigs_multi_occurences <- left_join(contigs_multi_occurences, mobileOG_contigs)
+contigs_multi_occurences
+```
+
+
+```{r}
+contigs_multi_occurences_tax <- inner_join(contigs_multi_occurences, tax)
+contigs_multi_occurences_tax
+```
+
+
+```{r}
+# contigs_multi_occurences_tax %>%
+#   write.table("./MAGS_mobileOG/mags_contigs_multi_occurences_tax.tsv", quote = F, row.names = F, sep = "\t")
+```
+
+
+
